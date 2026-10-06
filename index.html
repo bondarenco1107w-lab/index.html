@@ -1,1 +1,98 @@
-index
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Проверка новостей</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#16181d; --muted:#6b7280; --line:#dfe2e8; --accent:#1f6feb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12141a; --card:#1b1e26; --text:#e8eaf0; --muted:#9aa1b0; --line:#2c303b; --accent:#5b9bff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:8px 0 4px; }
+  p.hint { color:var(--muted); margin:0 0 14px; font-size:.9rem; }
+  textarea, input { width:100%; font:inherit; color:var(--text); background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  textarea { min-height:140px; resize:vertical; }
+  input { margin-bottom:10px; }
+  button { width:100%; margin-top:10px; padding:14px; font:inherit; font-weight:600; color:#fff; background:var(--accent); border:0; border-radius:10px; }
+  button:disabled { opacity:.6; }
+  details { margin-bottom:12px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  summary { cursor:pointer; font-weight:600; }
+  details textarea { min-height:120px; margin-top:10px; }
+  button.link { width:auto; margin:8px 0 0; padding:8px 12px; background:transparent; color:var(--accent); border:1px solid var(--line); font-weight:500; }
+  #out { margin-top:16px; padding:14px; background:var(--card); border:1px solid var(--line); border-radius:10px; white-space:pre-wrap; display:none; }
+  #out.err { border-color:#d93636; }
+  #src { margin-top:12px; font-size:.9rem; white-space:normal; }
+  #src a { display:block; color:var(--accent); margin-top:4px; word-break:break-word; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Проверка новостей</h1>
+  <p class="hint">Вставьте текст новости или ссылку. Чат объяснит смысл и проверит, пишут ли об этом надёжные источники.</p>
+  <input id="code" type="password" placeholder="Код доступа (если задан)" autocomplete="off" style="display:none">
+  <details id="pbox">
+    <summary id="psum">Свой промт (не задан)</summary>
+    <textarea id="prompt" placeholder="Вставьте свои инструкции. Пусто — используется стандартная проверка новостей."></textarea>
+    <button id="reset" class="link" type="button">Сбросить на стандартный</button>
+  </details>
+  <textarea id="text" placeholder="Текст новости или ссылка"></textarea>
+  <button id="go">Проверить</button>
+  <div id="out"></div>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const out = $("out"), go = $("go"), codeEl = $("code");
+
+  let saved = "";
+  try { saved = localStorage.getItem("code") || ""; } catch (e) {}
+  codeEl.value = saved;
+
+  const promptEl = $("prompt"), psum = $("psum");
+  try { promptEl.value = localStorage.getItem("prompt") || ""; } catch (e) {}
+  const refreshPrompt = () => {
+    psum.textContent = promptEl.value.trim() ? "Свой промт (включён)" : "Свой промт (не задан)";
+    try { localStorage.setItem("prompt", promptEl.value); } catch (e) {}
+  };
+  promptEl.addEventListener("input", refreshPrompt);
+  $("reset").addEventListener("click", () => { promptEl.value = ""; refreshPrompt(); });
+  refreshPrompt();
+
+  go.addEventListener("click", async () => {
+    const text = $("text").value.trim();
+    if (!text) return;
+    go.disabled = true; go.textContent = "Проверяю…";
+    out.style.display = "block"; out.className = ""; out.textContent = "Ищу подтверждения, это займёт до 20 секунд.";
+    try {
+      const r = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, code: codeEl.value, prompt: promptEl.value })
+      });
+      const d = await r.json();
+      if (r.status === 401) { codeEl.style.display = "block"; }
+      if (!r.ok) throw new Error(d.error || "Ошибка");
+      try { localStorage.setItem("code", codeEl.value); } catch (e) {}
+      out.textContent = d.answer;
+      if (d.sources && d.sources.length) {
+        const box = document.createElement("div"); box.id = "src";
+        box.append("Найденные источники:");
+        d.sources.forEach((s) => {
+          const a = document.createElement("a");
+          a.href = s.uri; a.target = "_blank"; a.rel = "noopener"; a.textContent = s.title;
+          box.append(a);
+        });
+        out.append(box);
+      }
+    } catch (e) {
+      out.className = "err"; out.textContent = e.message;
+    } finally {
+      go.disabled = false; go.textContent = "Проверить";
+    }
+  });
+</script>
+</body>
+</html>
